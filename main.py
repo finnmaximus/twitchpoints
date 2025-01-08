@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 import sys
 import traceback
 import logging
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # Configurar logging
 logging.basicConfig(
@@ -27,6 +28,23 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b"OK")
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+def run_health_server():
+    port = int(os.getenv('PORT', 8080))
+    server = HTTPServer(('', port), HealthCheckHandler)
+    logger.info(f"Iniciando servidor de health check en puerto {port}")
+    server.serve_forever()
 
 class TwitchWatcher:
     def __init__(self):
@@ -420,6 +438,10 @@ class TwitchWatcher:
 if __name__ == "__main__":
     bot = None
     try:
+        # Iniciar servidor de health check en un thread separado
+        health_thread = threading.Thread(target=run_health_server, daemon=True)
+        health_thread.start()
+        
         bot = TwitchWatcher()
         if bot.login():
             logger.info("\nIniciando visualización en el canal de mixwell...")

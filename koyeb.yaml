@@ -1,0 +1,13 @@
+name: twitch-watcher
+service:
+  type: web
+  instance_type: nano
+  env:
+    - name: TWITCH_USERNAME
+      value: "your_username"
+    - name: TWITCH_PASSWORD
+      value: "your_password"
+  ports:
+    - port: 8080
+      protocol: http
+  command: python main.py
