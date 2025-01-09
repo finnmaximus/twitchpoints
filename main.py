@@ -161,49 +161,48 @@ class TwitchWatcher:
             print("Error: Las credenciales son obligatorias")
             sys.exit(1)
 
-    def setup_driver(self):
-        max_attempts = 3
-        chrome_binary_paths = [
-            '/usr/bin/google-chrome',
+    def find_browser_binary(self):
+        """Busca el binario del navegador en múltiples ubicaciones"""
+        possible_paths = [
+            '/usr/bin/chromium',
             '/usr/bin/chromium-browser',
-            '/usr/bin/chromium'
+            '/usr/bin/google-chrome',
+            '/app/.apt/usr/bin/google-chrome',  # Koyeb specific
+            '/app/.apt/usr/bin/chromium-browser',  # Koyeb specific
         ]
         
+        for path in possible_paths:
+            if os.path.exists(path):
+                logger.info(f"Navegador encontrado en: {path}")
+                return path
+                
+        logger.warning("No se encontró el navegador en las rutas comunes")
+        return None
+
+    def setup_driver(self):
+        max_attempts = 3
         for attempt in range(max_attempts):
             try:
+                # Initialize options
                 options = uc.ChromeOptions()
-                options.add_argument('--headless')
+                options.add_argument('--headless=new')  # New headless mode
                 options.add_argument('--no-sandbox')
                 options.add_argument('--disable-dev-shm-usage')
                 options.add_argument('--disable-gpu')
                 
-                # Set binary location
-                for binary_path in chrome_binary_paths:
-                    if os.path.exists(binary_path):
-                        options.binary_location = binary_path
-                        logger.info(f"Usando Chrome binario: {binary_path}")
-                        break
+                # Find browser binary
+                browser_path = self.find_browser_binary()
+                if browser_path:
+                    options.binary_location = browser_path
                 
-                if os.getenv('KOYEB_APP_NAME'):
-                    chrome_path = self.find_chrome_binary()
-                    if chrome_path:
-                        logger.info(f"Iniciando Chrome con driver path: {chrome_path}")
-                        self.driver = uc.Chrome(
-                            driver_executable_path=chrome_path,
-                            options=options,
-                            headless=True,
-                            use_subprocess=False
-                        )
-                    else:
-                        logger.info("Usando configuración por defecto de ChromeDriver")
-                        self.driver = uc.Chrome(
-                            options=options,
-                            headless=True,
-                            use_subprocess=False,
-                            version_main=116  # Versión específica para evitar problemas
-                        )
-                else:
-                    self.driver = uc.Chrome(options=options)
+                # Configure ChromeDriver
+                logger.info("Configurando ChromeDriver...")
+                self.driver = uc.Chrome(
+                    options=options,
+                    headless=True,
+                    version_main=116,  # Specify version
+                    use_subprocess=False
+                )
                 
                 logger.info("Chrome iniciado correctamente")
                 return
