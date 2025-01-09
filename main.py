@@ -16,6 +16,9 @@ import traceback
 import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
+import glob
+import subprocess
+from pathlib import Path
 
 # Configurar logging
 logging.basicConfig(
@@ -98,6 +101,28 @@ def run_health_server():
                 raise
 
 class TwitchWatcher:
+    def find_chrome_binary(self):
+        """Busca dinámicamente la ubicación de Chrome"""
+        koyeb_paths = [
+            '/workspace/.heroku/python/lib/python3.9/site-packages/undetected_chromedriver/chromedriver',
+            '/workspace/.local/share/undetected_chromedriver/chromedriver',
+            '/workspace/.heroku/python/bin/chromedriver'
+        ]
+        
+        # Primero buscar en rutas de Koyeb
+        for path in koyeb_paths:
+            if os.path.exists(path):
+                logger.info(f"ChromeDriver encontrado en: {path}")
+                return path
+
+        # Si no se encuentra, usar el ChromeDriver incorporado
+        chromedriver_dir = os.path.join(os.path.expanduser('~'), '.local/share/undetected_chromedriver')
+        if not os.path.exists(chromedriver_dir):
+            os.makedirs(chromedriver_dir)
+        
+        logger.info(f"Usando directorio ChromeDriver: {chromedriver_dir}")
+        return None  # Dejar que undetected_chromedriver lo maneje
+
     def __init__(self):
         self.driver = None
         self.streams = {}  # Diccionario de streams activos
@@ -153,23 +178,23 @@ class TwitchWatcher:
                 options.add_argument('--disable-dev-shm-usage')
                 options.add_argument('--disable-gpu')
                 
-                # Configurar Chrome para Koyeb
                 if os.getenv('KOYEB_APP_NAME'):
-                    # Usar el Chrome instalado por el buildpack
-                    options.binary_location = '/usr/bin/chromium'
-                    chrome_driver_path = '/usr/bin/chromedriver'
-                    
-                    logger.info(f"Usando Chrome en: {options.binary_location}")
-                    logger.info(f"Usando ChromeDriver en: {chrome_driver_path}")
+                    chrome_path = self.find_chrome_binary()
+                    logger.info(f"Iniciando Chrome con driver path: {chrome_path}")
                     
                     self.driver = uc.Chrome(
-                        driver_executable_path=chrome_driver_path,
+                        driver_executable_path=chrome_path,
                         options=options,
-                        version_main=116  # Versión de Chrome del buildpack
+                        version_main=116,  # Versión que usa el buildpack
+                        headless=True,
+                        use_subprocess=False
                     )
                 else:
                     self.driver = uc.Chrome(options=options)
+                
+                logger.info("Chrome iniciado correctamente")
                 return
+                
             except Exception as e:
                 logger.error(f"Error al iniciar Chrome (intento {attempt + 1}/{max_attempts}): {str(e)}")
                 if attempt == max_attempts - 1:
