@@ -121,6 +121,12 @@ class TwitchWatcher:
             os.makedirs(chromedriver_dir)
         
         logger.info(f"Usando directorio ChromeDriver: {chromedriver_dir}")
+
+        # Instalar Chrome si no está presente
+        if os.getenv('KOYEB_APP_NAME') and not any(os.path.exists(p) for p in koyeb_paths):
+            logger.info("Instalando Chrome en Koyeb...")
+            os.system('apt-get update && apt-get install -y chromium-browser')
+
         return None  # Dejar que undetected_chromedriver lo maneje
 
     def __init__(self):
@@ -180,15 +186,17 @@ class TwitchWatcher:
                 
                 if os.getenv('KOYEB_APP_NAME'):
                     chrome_path = self.find_chrome_binary()
-                    logger.info(f"Iniciando Chrome con driver path: {chrome_path}")
-                    
-                    self.driver = uc.Chrome(
-                        driver_executable_path=chrome_path,
-                        options=options,
-                        version_main=116,  # Versión que usa el buildpack
-                        headless=True,
-                        use_subprocess=False
-                    )
+                    if chrome_path:
+                        logger.info(f"Iniciando Chrome con driver path: {chrome_path}")
+                        self.driver = uc.Chrome(
+                            driver_executable_path=chrome_path,
+                            options=options,
+                            headless=True,
+                            use_subprocess=False
+                        )
+                    else:
+                        logger.info("No se encontró ChromeDriver, dejando que undetected_chromedriver maneje la instalación")
+                        self.driver = uc.Chrome(options=options, headless=True, use_subprocess=False)
                 else:
                     self.driver = uc.Chrome(options=options)
                 
