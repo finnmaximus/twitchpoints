@@ -41,10 +41,21 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
 def run_health_server():
+    """Ejecuta un servidor TCP simple para health checks"""
+    import socket
     port = int(os.getenv('PORT', 8080))
-    server = HTTPServer(('', port), HealthCheckHandler)
-    logger.info(f"Iniciando servidor de health check en puerto {port}")
-    server.serve_forever()
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(('', port))
+    server.listen(1)
+    logger.info(f"Iniciando servidor TCP de health check en puerto {port}")
+    
+    while True:
+        try:
+            client, addr = server.accept()
+            client.send(b"OK")
+            client.close()
+        except Exception as e:
+            logger.error(f"Error en health check: {str(e)}")
 
 class TwitchWatcher:
     def __init__(self):

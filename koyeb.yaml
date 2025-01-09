@@ -1,13 +1,30 @@
-name: twitch-watcher
+name: twitchpoints
 service:
   type: web
-  instance_type: nano
+  instance_type: free
+  regions:
+    - fra
+  privileged: true
   env:
     - name: TWITCH_USERNAME
-      value: "your_username"
+      value: "finnmaximus"
     - name: TWITCH_PASSWORD
-      value: "your_password"
+      value: "DavidAlmada26012005."
   ports:
     - port: 8080
-      protocol: http
-  command: python main.py
+      protocol: tcp
+  health_checks:
+    - type: tcp
+      port: 8080
+      interval: 30
+      timeout: 5
+      grace_period: 5
+      restart_limit: 3
+  buildpacks:
+    - https://github.com/heroku/heroku-buildpack-python
+    - https://github.com/heroku/heroku-buildpack-google-chrome
+  git:
+    build_command: pip install -r requirements.txt
+    run_command: python main.py
+    privileged: true
+  skip_cache: true
