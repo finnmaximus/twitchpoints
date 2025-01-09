@@ -102,32 +102,19 @@ def run_health_server():
 
 class TwitchWatcher:
     def find_chrome_binary(self):
-        """Busca dinámicamente la ubicación de Chrome"""
         koyeb_paths = [
             '/workspace/.heroku/python/lib/python3.9/site-packages/undetected_chromedriver/chromedriver',
             '/workspace/.local/share/undetected_chromedriver/chromedriver',
             '/workspace/.heroku/python/bin/chromedriver'
         ]
-        
-        # Primero buscar en rutas de Koyeb
         for path in koyeb_paths:
             if os.path.exists(path):
                 logger.info(f"ChromeDriver encontrado en: {path}")
                 return path
 
-        # Si no se encuentra, usar el ChromeDriver incorporado
-        chromedriver_dir = os.path.join(os.path.expanduser('~'), '.local/share/undetected_chromedriver')
-        if not os.path.exists(chromedriver_dir):
-            os.makedirs(chromedriver_dir)
-        
-        logger.info(f"Usando directorio ChromeDriver: {chromedriver_dir}")
-
-        # Instalar Chrome si no está presente
-        if os.getenv('KOYEB_APP_NAME') and not any(os.path.exists(p) for p in koyeb_paths):
-            logger.info("Instalando Chrome en Koyeb...")
-            os.system('apt-get update && apt-get install -y chromium-browser')
-
-        return None  # Dejar que undetected_chromedriver lo maneje
+        # Dejar que undetected_chromedriver maneje la instalación
+        logger.info("No se encontró ChromeDriver; dejando que undetected_chromedriver lo maneje.")
+        return None
 
     def __init__(self):
         self.driver = None
@@ -195,7 +182,7 @@ class TwitchWatcher:
                             use_subprocess=False
                         )
                     else:
-                        logger.info("No se encontró ChromeDriver, dejando que undetected_chromedriver maneje la instalación")
+                        logger.info("Sin ChromeDriver; letting undetected_chromedriver handle everything.")
                         self.driver = uc.Chrome(options=options, headless=True, use_subprocess=False)
                 else:
                     self.driver = uc.Chrome(options=options)
