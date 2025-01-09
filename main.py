@@ -5,7 +5,7 @@ import argparse
 import getpass
 import datetime
 import json
-import undetected_chromedriver as uc
+from playwright.sync_api import sync_playwright
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -101,26 +101,12 @@ def run_health_server():
                 raise
 
 class TwitchWatcher:
-    def find_chrome_binary(self):
-        koyeb_paths = [
-            '/workspace/.heroku/python/lib/python3.9/site-packages/undetected_chromedriver/chromedriver',
-            '/workspace/.local/share/undetected_chromedriver/chromedriver',
-            '/workspace/.heroku/python/bin/chromedriver'
-        ]
-        for path in koyeb_paths:
-            if os.path.exists(path):
-                logger.info(f"ChromeDriver encontrado en: {path}")
-                return path
-
-        # Dejar que undetected_chromedriver maneje la instalación
-        logger.info("No se encontró ChromeDriver; dejando que undetected_chromedriver lo maneje.")
-        return None
-
     def __init__(self):
-        self.driver = None
+        self.browser = None
+        self.page = None
         self.streams = {}  # Diccionario de streams activos
         self.running = True
-        self.setup_driver()
+        self.setup_browser()
         self.commands = {
             'help': self.show_help,
             'exit': self.exit_program,
@@ -161,89 +147,39 @@ class TwitchWatcher:
             print("Error: Las credenciales son obligatorias")
             sys.exit(1)
 
-    def setup_driver(self):
-        max_attempts = 3
-        for attempt in range(max_attempts):
-            try:
-                options = uc.ChromeOptions()
-                options.add_argument('--headless')
-                options.add_argument('--no-sandbox')
-                options.add_argument('--disable-dev-shm-usage')
-                options.add_argument('--disable-gpu')
-                
-                if os.getenv('KOYEB_APP_NAME'):
-                    chrome_path = self.find_chrome_binary()
-                    if chrome_path:
-                        logger.info(f"Iniciando Chrome con driver path: {chrome_path}")
-                        self.driver = uc.Chrome(
-                            driver_executable_path=chrome_path,
-                            options=options,
-                            headless=True,
-                            use_subprocess=False
-                        )
-                    else:
-                        logger.info("Sin ChromeDriver; letting undetected_chromedriver handle everything.")
-                        self.driver = uc.Chrome(options=options, headless=True, use_subprocess=False)
-                else:
-                    self.driver = uc.Chrome(options=options)
-                
-                logger.info("Chrome iniciado correctamente")
-                return
-                
-            except Exception as e:
-                logger.error(f"Error al iniciar Chrome (intento {attempt + 1}/{max_attempts}): {str(e)}")
-                if attempt == max_attempts - 1:
-                    raise
-                time.sleep(5)
+    def setup_browser(self):
+        try:
+            playwright = sync_playwright().start()
+            self.browser = playwright.chromium.launch(headless=True)
+            self.page = self.browser.new_page()
+            logger.info("Navegador iniciado correctamente")
+        except Exception as e:
+            logger.error(f"Error al iniciar navegador: {str(e)}")
+            raise
 
     def login(self):
         try:
-            self.driver.get('https://www.twitch.tv/login')
-            wait = WebDriverWait(self.driver, 20)
+            self.page.goto('https://www.twitch.tv/login')
             
-            username_input = wait.until(EC.presence_of_element_located((By.ID, "login-username")))
-            password_input = self.driver.find_element(By.ID, "password-input")
-            
-            # Usar credenciales de variables de entorno
-            username_input.send_keys(self.twitch_username)
-            password_input.send_keys(self.twitch_password)
-            
-            login_button = self.driver.find_element(By.CSS_SELECTOR, "[data-a-target='passport-login-button']")
-            login_button.click()
+            # Login con credenciales
+            self.page.fill('#login-username', self.twitch_username)
+            self.page.fill('#password-input', self.twitch_password)
+            self.page.click('[data-a-target="passport-login-button"]')
             
             print("\nIntentando login...")
-            time.sleep(3)  # Esperar respuesta inicial
+            time.sleep(3)
 
-            # Verificar si hay verificación por correo
-            max_attempts = 3
-            while max_attempts > 0:
-                try:
-                    verify_element = self.driver.find_element(By.CSS_SELECTOR, "[data-a-target='verification-code-input']")
-                    if verify_element:
-                        print("\n¡Se requiere verificación por correo!")
-                        print("Revisa tu correo y copia el código de verificación.")
-                        verification_code = input("\nIngresa el código de verificación: ")
-                        verify_element.send_keys(verification_code)
-                        
-                        # Buscar y hacer clic en el botón de enviar código
-                        submit_button = self.driver.find_element(By.CSS_SELECTOR, "[data-a-target='verification-code-submit-button']")
-                        submit_button.click()
-                        time.sleep(3)
-                except:
-                    # Si no encontramos el elemento de verificación, verificamos si el login fue exitoso
-                    if "twitch.tv/" in self.driver.current_url and "login" not in self.driver.current_url:
-                        print("\n¡Login exitoso!")
-                        return True
-                
-                max_attempts -= 1
-                time.sleep(2)
+            # Verificar código si es necesario
+            if self.page.locator('[data-a-target="verification-code-input"]').is_visible():
+                print("\n¡Se requiere verificación por correo!")
+                verification_code = input("\nIngresa el código de verificación: ")
+                self.page.fill('[data-a-target="verification-code-input"]', verification_code)
+                self.page.click('[data-a-target="verification-code-submit-button"]')
 
-            if "twitch.tv/" in self.driver.current_url and "login" not in self.driver.current_url:
-                print("\n¡Login exitoso!")
-                return True
-            else:
-                print("\nError: No se pudo completar el login")
-                return False
+            # Verificar login exitoso
+            self.page.wait_for_url("**/directory/following")
+            print("\n¡Login exitoso!")
+            return True
 
         except Exception as e:
             print(f"\nError durante el login: {str(e)}")
@@ -426,15 +362,16 @@ class TwitchWatcher:
                 if not self.start_time:
                     self.start_time = time.time()
                 
-                self.driver.get(f'https://www.twitch.tv/{channel}')
+                self.page.goto(f'https://www.twitch.tv/{channel}')
                 print(f"\nConectando al canal de {channel}...")
                 time.sleep(5)  # Wait for stream to load
                 
                 # Click on mature content button if it appears
                 try:
-                    mature_button = self.driver.find_element(By.CSS_SELECTOR, "[data-a-target='player-overlay-mature-accept']")
-                    mature_button.click()
-                    print("Contenido para mayores de edad aceptado")
+                    mature_button = self.page.locator('[data-a-target="player-overlay-mature-accept"]')
+                    if mature_button.is_visible():
+                        mature_button.click()
+                        print("Contenido para mayores de edad aceptado")
                 except:
                     pass
 
@@ -447,7 +384,7 @@ class TwitchWatcher:
                         current_time = time.time()
                         
                         # Verificar que seguimos en la página correcta
-                        if channel not in self.driver.current_url:
+                        if channel not in self.page.url:
                             logger.warning(f"Página incorrecta detectada para {channel}, reconectando...")
                             raise Exception("Página incorrecta")
 
@@ -456,8 +393,8 @@ class TwitchWatcher:
                         
                         # Intentar reclamar puntos con manejo de errores
                         try:
-                            points_button = self.safe_find_element(By.CSS_SELECTOR, ".claimable-bonus__icon")
-                            if points_button and points_button.is_displayed():
+                            points_button = self.page.locator('.claimable-bonus__icon')
+                            if points_button.is_visible():
                                 points_button.click()
                                 self.streams[channel]['claimed_points'] += 50
                                 logger.info(f"¡Puntos reclamados en el canal de {channel}!")
@@ -511,8 +448,8 @@ class TwitchWatcher:
                 except:
                     pass
                     
-            if self.driver:
-                self.driver.quit()
+            if self.browser:
+                self.browser.close()
         except Exception as e:
             logger.error(f"Error durante la limpieza: {str(e)}")
 
