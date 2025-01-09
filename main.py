@@ -155,10 +155,20 @@ class TwitchWatcher:
                 
                 # Configurar Chrome para Koyeb
                 if os.getenv('KOYEB_APP_NAME'):
-                    chrome_bin = os.getenv('GOOGLE_CHROME_SHIM', '/usr/bin/google-chrome')
-                    options.binary_location = chrome_bin
-
-                self.driver = uc.Chrome(options=options)
+                    # Usar el Chrome instalado por el buildpack
+                    options.binary_location = '/usr/bin/chromium'
+                    chrome_driver_path = '/usr/bin/chromedriver'
+                    
+                    logger.info(f"Usando Chrome en: {options.binary_location}")
+                    logger.info(f"Usando ChromeDriver en: {chrome_driver_path}")
+                    
+                    self.driver = uc.Chrome(
+                        driver_executable_path=chrome_driver_path,
+                        options=options,
+                        version_main=116  # Versión de Chrome del buildpack
+                    )
+                else:
+                    self.driver = uc.Chrome(options=options)
                 return
             except Exception as e:
                 logger.error(f"Error al iniciar Chrome (intento {attempt + 1}/{max_attempts}): {str(e)}")
