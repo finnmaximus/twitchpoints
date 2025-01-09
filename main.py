@@ -15,6 +15,7 @@ import sys
 import traceback
 import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
+import requests
 
 # Configurar logging
 logging.basicConfig(
@@ -30,32 +31,71 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
+    protocol_version = 'HTTP/1.1'  # Use HTTP/1.1 instead of 0.9
+    bot = None
+
     def do_GET(self):
-        if self.path == '/health':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            self.wfile.write(b"OK")
-        else:
-            self.send_response(404)
-            self.end_headers()
+        try:
+            if self.path == '/health':
+                self._send_response("OK")
+            elif self.path == '/help':
+                self._send_response("""
+=== Comandos Disponibles ===
+help              - Muestra esta lista de comandos
+status           - Muestra el estado actual
+list             - Muestra streams activos
+
+Para más comandos, usa los endpoints:
+/add/<canal>     - Añade un nuevo stream
+/remove/<canal>  - Elimina un stream
+/change/<canal>  - Cambia el stream principal
+                """)
+            elif self.path == '/status':
+                if self.bot:
+                    self._send_response(f"Canal actual: {self.bot.current_stream}")
+                else:
+                    self._send_response("Bot no iniciado", 503)
+            elif self.path == '/list':
+                if self.bot:
+                    streams = "\n".join([f"- {channel}" for channel in self.bot.streams])
+                    self._send_response(streams if streams else "No hay streams activos")
+                else:
+                    self._send_response("Bot no iniciado", 503)
+            else:
+                self._send_response("Not Found", 404)
+        except Exception as e:
+            self._send_response(f"Error: {str(e)}", 500)
+
+    def _send_response(self, message, status=200):
+        """Helper para enviar respuestas HTTP consistentes"""
+        self.send_response(status)
+        self.send_header('Content-type', 'text/plain; charset=utf-8')
+        self.send_header('Connection', 'close')
+        self.end_headers()
+        self.wfile.write(message.encode('utf-8'))
 
 def run_health_server():
-    """Ejecuta un servidor TCP simple para health checks"""
-    import socket
+    """Ejecuta un servidor HTTP para health checks"""
     port = int(os.getenv('PORT', 8080))
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind(('', port))
-    server.listen(1)
-    logger.info(f"Iniciando servidor TCP de health check en puerto {port}")
+    retries = 3
     
-    while True:
+    for attempt in range(retries):
         try:
-            client, addr = server.accept()
-            client.send(b"OK")
-            client.close()
-        except Exception as e:
-            logger.error(f"Error en health check: {str(e)}")
+            server = HTTPServer(('', port), HealthCheckHandler)
+            logger.info(f"Iniciando servidor HTTP en puerto {port}")
+            server.serve_forever()
+            break
+        except OSError as e:
+            if e.errno == 98:  # Address already in use
+                if attempt < retries - 1:
+                    logger.warning(f"Puerto {port} en uso, intentando liberar...")
+                    time.sleep(2)
+                    continue
+                else:
+                    logger.error(f"No se pudo iniciar el servidor HTTP: puerto {port} en uso")
+                    raise
+            else:
+                raise
 
 class TwitchWatcher:
     def __init__(self):
@@ -446,18 +486,40 @@ class TwitchWatcher:
         except Exception as e:
             logger.error(f"Error durante la limpieza: {str(e)}")
 
+def run_command(command):
+    """Ejecuta un comando y retorna la respuesta"""
+    try:
+        response = requests.get(f"http://localhost:8080/{command}")
+        return response.text
+    except Exception as e:
+        return f"Error: {str(e)}"
+
 if __name__ == "__main__":
     bot = None
     try:
-        # Iniciar servidor de health check en un thread separado
-        health_thread = threading.Thread(target=run_health_server, daemon=True)
-        health_thread.start()
+        logger.info("=== Iniciando TwitchWatcher ===")
+        logger.info("Esperando credenciales...")
         
         bot = TwitchWatcher()
+        
+        logger.info("Intentando login en Twitch...")
         if bot.login():
-            logger.info("\nIniciando visualización en el canal de mixwell...")
+            HealthCheckHandler.bot = bot
+            
+            logger.info("\n=== Bot iniciado correctamente ===")
+            logger.info("Usa los siguientes comandos para controlar el bot:")
+            logger.info("python control.py status  - Ver estado")
+            logger.info("python control.py list    - Ver streams")
+            logger.info("python control.py log     - Ver logs\n")
+            
             bot.handle_add_stream(["mixwell"])
-            bot.command_loop()
+            
+            health_thread = threading.Thread(target=run_health_server, daemon=True)
+            health_thread.start()
+            
+            while bot.running:
+                time.sleep(1)
+                
     except KeyboardInterrupt:
         logger.info("\nPrograma detenido por el usuario")
     except Exception as e:
