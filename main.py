@@ -5,7 +5,8 @@ import argparse
 import getpass
 import datetime
 import json
-import undetected_chromedriver as uc
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -107,19 +108,12 @@ class TwitchWatcher:
     def check_and_install_dependencies(self):
         """Verifica e instala las dependencias necesarias"""
         try:
-            pkg_resources.get_distribution('undetected-chromedriver')
-            logger.info("undetected-chromedriver ya está instalado")
-        except pkg_resources.DistributionNotFound:
-            logger.warning("undetected-chromedriver no encontrado, intentando instalar...")
-            try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "undetected-chromedriver"])
-                logger.info("undetected-chromedriver instalado correctamente")
-                # Recargar el módulo después de instalarlo
-                import importlib
-                importlib.reload(uc)
-            except Exception as e:
-                logger.error(f"Error instalando undetected-chromedriver: {e}")
-                raise
+            # Instalar selenium en lugar de undetected-chromedriver
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "selenium"])
+            logger.info("selenium instalado/actualizado correctamente")
+        except Exception as e:
+            logger.error(f"Error instalando dependencias: {e}")
+            raise
 
     def find_chrome_binary(self):
         koyeb_paths = [
@@ -209,24 +203,24 @@ class TwitchWatcher:
         logger.info("Iniciando configuración del driver...")
         def init_driver():
             try:
-                # Configuración básica de Chrome
-                options = uc.ChromeOptions()
+                chrome_path = "/app/.apt/opt/google/chrome/google-chrome"
+                if not os.path.exists(chrome_path):
+                    raise Exception(f"Chrome no encontrado en {chrome_path}")
+
+                # Usar ChromeOptions estándar en lugar de undetected
+                options = webdriver.ChromeOptions()
+                options.binary_location = chrome_path
                 options.add_argument('--headless=new')
                 options.add_argument('--no-sandbox')
                 options.add_argument('--disable-dev-shm-usage')
                 options.add_argument('--disable-gpu')
                 options.add_argument('--window-size=1920,1080')
+                options.add_argument('--disable-blink-features=AutomationControlled')
                 
-                # Configuración específica para Koyeb
-                chrome_path = "/app/.apt/opt/google/chrome/google-chrome"
-                if os.path.exists(chrome_path):
-                    options.binary_location = chrome_path
-
-                # Inicializar el driver con configuración mínima
-                driver = uc.Chrome(
-                    options=options,
-                    headless=True,
-                    version_main=120
+                service = Service()
+                driver = webdriver.Chrome(
+                    service=service,
+                    options=options
                 )
                 
                 # Configurar timeouts
@@ -242,19 +236,16 @@ class TwitchWatcher:
         # Limpiar procesos existentes
         try:
             subprocess.run(['pkill', '-f', 'chrome'], stderr=subprocess.DEVNULL)
-            subprocess.run(['pkill', '-f', 'chromedriver'], stderr=subprocess.DEVNULL)
-            time.sleep(2)  # Esperar a que los procesos se cierren
+            time.sleep(2)
         except:
             pass
 
-        # Intentar inicializar el driver con timeout y reintentos
+        # Intentar inicializar el driver
         for attempt in range(3):
             try:
-                with ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(init_driver)
-                    self.driver = future.result(timeout=30)
-                    logger.info("🚀 Chrome configurado exitosamente")
-                    return
+                self.driver = init_driver()
+                logger.info("🚀 Chrome configurado exitosamente")
+                return
             except Exception as e:
                 logger.error(f"Error en intento {attempt + 1}: {e}")
                 if self.driver:
@@ -265,13 +256,8 @@ class TwitchWatcher:
                 self.driver = None
                 
                 if attempt < 2:
-                    logger.info("Limpiando procesos y reintentando en 5 segundos...")
-                    try:
-                        subprocess.run(['pkill', '-f', 'chrome'], stderr=subprocess.DEVNULL)
-                        subprocess.run(['pkill', '-f', 'chromedriver'], stderr=subprocess.DEVNULL)
-                        time.sleep(5)
-                    except:
-                        pass
+                    logger.info("Reintentando en 5 segundos...")
+                    time.sleep(5)
                 else:
                     raise Exception("No se pudo inicializar Chrome después de 3 intentos")
 
