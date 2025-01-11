@@ -220,51 +220,85 @@ class TwitchWatcher:
                 options.add_argument('--disable-gpu')
                 options.add_argument('--disable-software-rasterizer')
                 options.add_argument('--disable-extensions')
-                options.add_argument('--single-process')
-                options.add_argument('--remote-debugging-port=9222')
+                options.add_argument("--disable-application-cache")
+                options.add_argument("--disable-infobars")
+                options.add_argument("--disable-browser-side-navigation")
+                options.add_argument("--ignore-certificate-errors")
+                options.add_argument("--disable-client-side-phishing-detection")
+                options.add_argument('--allow-running-insecure-content')
                 options.add_argument('--window-size=1920,1080')
-                options.add_argument('--disable-web-security')
-                options.add_argument('--no-first-run')
-                options.add_argument('--no-default-browser-check')
-                options.add_argument('--disable-blink-features=AutomationControlled')
-                
-                if os.path.exists(chrome_path):
-                    options.binary_location = chrome_path
+                options.add_argument('--start-maximized')
+                options.binary_location = chrome_path
 
-                return uc.Chrome(
+                # Configuraciones adicionales para entorno Koyeb
+                options.add_experimental_option('excludeSwitches', ['enable-automation'])
+                options.add_experimental_option('useAutomationExtension', False)
+
+                # Establecer el directorio de datos del usuario
+                user_data_dir = "/tmp/chrome-data"
+                os.makedirs(user_data_dir, exist_ok=True)
+                options.add_argument(f'--user-data-dir={user_data_dir}')
+
+                # Inicializar el driver con configuración específica
+                driver = uc.Chrome(
                     options=options,
                     headless=True,
                     version_main=120,
-                    driver_executable_path=None
+                    driver_executable_path=None,
+                    use_subprocess=True
                 )
+                
+                # Configurar timeouts
+                driver.set_page_load_timeout(30)
+                driver.implicitly_wait(10)
+                
+                return driver
+
             except Exception as e:
                 logger.error(f"Error en init_driver: {e}")
                 raise
 
-        # Intentar inicializar el driver con timeout
+        # Limpiar cualquier proceso anterior
+        try:
+            subprocess.run(['pkill', 'chrome'], stderr=subprocess.DEVNULL)
+            subprocess.run(['pkill', 'chromedriver'], stderr=subprocess.DEVNULL)
+        except:
+            pass
+
+        # Intentar inicializar el driver con timeout y reintentos
         for attempt in range(3):
             try:
                 with ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(init_driver)
-                    self.driver = future.result(timeout=60)  # 60 segundos de timeout
+                    self.driver = future.result(timeout=30)  # Reducir timeout a 30 segundos
                     logger.info("🚀 Chrome configurado exitosamente")
                     return
-            except TimeoutError:
-                logger.error(f"Timeout en intento {attempt + 1} de inicializar Chrome")
+            except Exception as e:
+                logger.error(f"Error en intento {attempt + 1}: {e}")
                 if self.driver:
                     try:
                         self.driver.quit()
                     except:
                         pass
-            except Exception as e:
-                logger.error(f"Error en intento {attempt + 1}: {e}")
-                if attempt < 2:  # Si no es el último intento
-                    logger.info("Reintentando en 5 segundos...")
+                self.driver = None
+                
+                if attempt < 2:
+                    logger.info("Limpiando procesos y reintentando en 5 segundos...")
+                    try:
+                        subprocess.run(['pkill', 'chrome'], stderr=subprocess.DEVNULL)
+                        subprocess.run(['pkill', 'chromedriver'], stderr=subprocess.DEVNULL)
+                    except:
+                        pass
                     time.sleep(5)
                 else:
-                    raise
+                    raise Exception("No se pudo inicializar Chrome después de 3 intentos")
 
     def login(self):
+        """Método de login con verificación de driver"""
+        if not self.driver:
+            logger.error("Driver no inicializado")
+            return False
+            
         try:
             self.driver.get('https://www.twitch.tv/login')
             wait = WebDriverWait(self.driver, 20)
@@ -597,24 +631,38 @@ if __name__ == "__main__":
         # Iniciar health server en un thread separado
         health_thread = threading.Thread(target=run_health_server, daemon=True)
         health_thread.start()
-        
-        # Dar tiempo al servidor para iniciar
         time.sleep(2)
         
-        logger.info("Esperando credenciales...")
-        bot = TwitchWatcher()
-        
-        logger.info("Intentando login en Twitch...")
-        if bot.login():
-            HealthCheckHandler.bot = bot
-            logger.info("\n=== Bot iniciado correctamente ===")
-            bot.handle_add_stream(["mixwell"])
-            
-            while bot.running:
-                time.sleep(1)
+        for attempt in range(3):
+            try:
+                logger.info(f"Intento {attempt + 1} de iniciar el bot...")
+                bot = TwitchWatcher()
+                
+                if bot.driver is None:
+                    raise Exception("Driver no inicializado correctamente")
+                
+                logger.info("Intentando login en Twitch...")
+                if bot.login():
+                    HealthCheckHandler.bot = bot
+                    logger.info("=== Bot iniciado correctamente ===")
+                    bot.handle_add_stream(["mixwell"])
+                    
+                    while bot.running:
+                        time.sleep(1)
+                    break
+                else:
+                    raise Exception("Fallo en el login de Twitch")
+                    
+            except Exception as e:
+                logger.error(f"Error en intento {attempt + 1}: {e}")
+                if attempt < 2:
+                    logger.info("Reintentando en 10 segundos...")
+                    time.sleep(10)
+                else:
+                    raise
                 
     except Exception as e:
-        logger.error(f"Error crítico: {str(e)}")
+        logger.error(f"Error crítico: {e}")
         logger.error(traceback.format_exc())
         sys.exit(1)
     finally:
