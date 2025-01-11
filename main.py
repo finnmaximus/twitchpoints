@@ -19,6 +19,7 @@ import requests
 import glob
 import subprocess
 from pathlib import Path
+import pkg_resources
 
 # Configurar logging
 logging.basicConfig(
@@ -101,6 +102,23 @@ def run_health_server():
                 raise
 
 class TwitchWatcher:
+    def check_and_install_dependencies(self):
+        """Verifica e instala las dependencias necesarias"""
+        try:
+            pkg_resources.get_distribution('undetected-chromedriver')
+            logger.info("undetected-chromedriver ya está instalado")
+        except pkg_resources.DistributionNotFound:
+            logger.warning("undetected-chromedriver no encontrado, intentando instalar...")
+            try:
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "undetected-chromedriver"])
+                logger.info("undetected-chromedriver instalado correctamente")
+                # Recargar el módulo después de instalarlo
+                import importlib
+                importlib.reload(uc)
+            except Exception as e:
+                logger.error(f"Error instalando undetected-chromedriver: {e}")
+                raise
+
     def find_chrome_binary(self):
         koyeb_paths = [
             '/workspace/.heroku/python/lib/python3.9/site-packages/undetected_chromedriver/chromedriver',
@@ -117,6 +135,12 @@ class TwitchWatcher:
         return None
 
     def __init__(self):
+        # Verificar dependencias antes de continuar
+        self.check_and_install_dependencies()
+        
+        # Crear directorio para ChromeDriver si no existe
+        os.makedirs("/app/.local/share/undetected_chromedriver", exist_ok=True)
+        
         self.driver = None
         self.streams = {}  # Diccionario de streams activos
         self.running = True
@@ -180,26 +204,57 @@ class TwitchWatcher:
         return None
 
     def setup_driver(self):
-        options = uc.ChromeOptions()
-        options.add_argument('--headless=new')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--disable-gpu')
-        
-        # Configuración específica para Koyeb
-        chrome_binary = "/app/.apt/opt/google/chrome/google-chrome"
-        if os.path.exists(chrome_binary):
-            options.binary_location = chrome_binary
-        
+        logger.info("Iniciando configuración del driver...")
         try:
-            self.driver = uc.Chrome(
-                options=options,
-                headless=True,
-                version_main=120
-            )
-            logger.info("🚀 Chrome configurado exitosamente")
+            # Primero intentar encontrar Chrome
+            chrome_path = "/app/.apt/opt/google/chrome/google-chrome"
+            if not os.path.exists(chrome_path):
+                raise Exception(f"Chrome no encontrado en {chrome_path}")
+
+            options = uc.ChromeOptions()
+            options.add_argument('--headless=new')
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--disable-gpu')
+            options.add_argument('--disable-software-rasterizer')
+            options.add_argument('--disable-extensions')
+            options.add_argument('--single-process')
+            options.add_argument('--remote-debugging-port=9222')
+            options.add_argument('--window-size=1920,1080')
+            options.add_argument('--disable-web-security')
+            
+            # Configuración específica para Koyeb
+            chrome_path = "/app/.apt/opt/google/chrome/google-chrome"
+            if os.path.exists(chrome_path):
+                logger.info(f"Usando Chrome en: {chrome_path}")
+                options.binary_location = chrome_path
+            else:
+                logger.warning("No se encontró Chrome en la ruta esperada de Koyeb")
+            
+            try:
+                self.driver = uc.Chrome(
+                    options=options,
+                    headless=True,
+                    version_main=120
+                )
+                logger.info("🚀 Chrome configurado exitosamente")
+            except Exception as chrome_error:
+                logger.error(f"Error al crear instancia de Chrome: {chrome_error}")
+                # Intentar actualizar chromedriver si falla
+                logger.info("Intentando actualizar chromedriver...")
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "undetected-chromedriver"])
+                importlib.reload(uc)
+                # Reintentar crear la instancia
+                self.driver = uc.Chrome(
+                    options=options,
+                    headless=True,
+                    version_main=120
+                )
+                logger.info("🚀 Chrome configurado exitosamente después de actualización")
+
         except Exception as e:
-            logger.error(f"Error al configurar Chrome: {e}")
+            logger.error(f"Error fatal al configurar Chrome: {e}")
+            logger.error(traceback.format_exc())
             raise
 
     def login(self):
