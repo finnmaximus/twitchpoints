@@ -20,6 +20,8 @@ import glob
 import subprocess
 from pathlib import Path
 import pkg_resources
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+import signal
 
 # Configurar logging
 logging.basicConfig(
@@ -205,57 +207,62 @@ class TwitchWatcher:
 
     def setup_driver(self):
         logger.info("Iniciando configuración del driver...")
-        try:
-            # Primero intentar encontrar Chrome
-            chrome_path = "/app/.apt/opt/google/chrome/google-chrome"
-            if not os.path.exists(chrome_path):
-                raise Exception(f"Chrome no encontrado en {chrome_path}")
-
-            options = uc.ChromeOptions()
-            options.add_argument('--headless=new')
-            options.add_argument('--no-sandbox')
-            options.add_argument('--disable-dev-shm-usage')
-            options.add_argument('--disable-gpu')
-            options.add_argument('--disable-software-rasterizer')
-            options.add_argument('--disable-extensions')
-            options.add_argument('--single-process')
-            options.add_argument('--remote-debugging-port=9222')
-            options.add_argument('--window-size=1920,1080')
-            options.add_argument('--disable-web-security')
-            
-            # Configuración específica para Koyeb
-            chrome_path = "/app/.apt/opt/google/chrome/google-chrome"
-            if os.path.exists(chrome_path):
-                logger.info(f"Usando Chrome en: {chrome_path}")
-                options.binary_location = chrome_path
-            else:
-                logger.warning("No se encontró Chrome en la ruta esperada de Koyeb")
-            
+        def init_driver():
             try:
-                self.driver = uc.Chrome(
-                    options=options,
-                    headless=True,
-                    version_main=120
-                )
-                logger.info("🚀 Chrome configurado exitosamente")
-            except Exception as chrome_error:
-                logger.error(f"Error al crear instancia de Chrome: {chrome_error}")
-                # Intentar actualizar chromedriver si falla
-                logger.info("Intentando actualizar chromedriver...")
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "undetected-chromedriver"])
-                importlib.reload(uc)
-                # Reintentar crear la instancia
-                self.driver = uc.Chrome(
-                    options=options,
-                    headless=True,
-                    version_main=120
-                )
-                logger.info("🚀 Chrome configurado exitosamente después de actualización")
+                chrome_path = "/app/.apt/opt/google/chrome/google-chrome"
+                if not os.path.exists(chrome_path):
+                    raise Exception(f"Chrome no encontrado en {chrome_path}")
 
-        except Exception as e:
-            logger.error(f"Error fatal al configurar Chrome: {e}")
-            logger.error(traceback.format_exc())
-            raise
+                options = uc.ChromeOptions()
+                options.add_argument('--headless=new')
+                options.add_argument('--no-sandbox')
+                options.add_argument('--disable-dev-shm-usage')
+                options.add_argument('--disable-gpu')
+                options.add_argument('--disable-software-rasterizer')
+                options.add_argument('--disable-extensions')
+                options.add_argument('--single-process')
+                options.add_argument('--remote-debugging-port=9222')
+                options.add_argument('--window-size=1920,1080')
+                options.add_argument('--disable-web-security')
+                options.add_argument('--no-first-run')
+                options.add_argument('--no-default-browser-check')
+                options.add_argument('--disable-blink-features=AutomationControlled')
+                
+                if os.path.exists(chrome_path):
+                    options.binary_location = chrome_path
+
+                return uc.Chrome(
+                    options=options,
+                    headless=True,
+                    version_main=120,
+                    driver_executable_path=None
+                )
+            except Exception as e:
+                logger.error(f"Error en init_driver: {e}")
+                raise
+
+        # Intentar inicializar el driver con timeout
+        for attempt in range(3):
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(init_driver)
+                    self.driver = future.result(timeout=60)  # 60 segundos de timeout
+                    logger.info("🚀 Chrome configurado exitosamente")
+                    return
+            except TimeoutError:
+                logger.error(f"Timeout en intento {attempt + 1} de inicializar Chrome")
+                if self.driver:
+                    try:
+                        self.driver.quit()
+                    except:
+                        pass
+            except Exception as e:
+                logger.error(f"Error en intento {attempt + 1}: {e}")
+                if attempt < 2:  # Si no es el último intento
+                    logger.info("Reintentando en 5 segundos...")
+                    time.sleep(5)
+                else:
+                    raise
 
     def login(self):
         try:
@@ -574,36 +581,42 @@ def run_command(command):
         return f"Error: {str(e)}"
 
 if __name__ == "__main__":
+    def signal_handler(signum, frame):
+        logger.info("Señal de terminación recibida. Limpiando...")
+        if bot:
+            bot.cleanup()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    
     bot = None
     try:
         logger.info("=== Iniciando TwitchWatcher ===")
-        logger.info("Esperando credenciales...")
         
+        # Iniciar health server en un thread separado
+        health_thread = threading.Thread(target=run_health_server, daemon=True)
+        health_thread.start()
+        
+        # Dar tiempo al servidor para iniciar
+        time.sleep(2)
+        
+        logger.info("Esperando credenciales...")
         bot = TwitchWatcher()
         
         logger.info("Intentando login en Twitch...")
         if bot.login():
             HealthCheckHandler.bot = bot
-            
             logger.info("\n=== Bot iniciado correctamente ===")
-            logger.info("Usa los siguientes comandos para controlar el bot:")
-            logger.info("python control.py status  - Ver estado")
-            logger.info("python control.py list    - Ver streams")
-            logger.info("python control.py log     - Ver logs\n")
-            
             bot.handle_add_stream(["mixwell"])
-            
-            health_thread = threading.Thread(target=run_health_server, daemon=True)
-            health_thread.start()
             
             while bot.running:
                 time.sleep(1)
                 
-    except KeyboardInterrupt:
-        logger.info("\nPrograma detenido por el usuario")
     except Exception as e:
         logger.error(f"Error crítico: {str(e)}")
         logger.error(traceback.format_exc())
+        sys.exit(1)
     finally:
         if bot:
             bot.cleanup()
