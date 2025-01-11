@@ -209,43 +209,24 @@ class TwitchWatcher:
         logger.info("Iniciando configuración del driver...")
         def init_driver():
             try:
-                chrome_path = "/app/.apt/opt/google/chrome/google-chrome"
-                if not os.path.exists(chrome_path):
-                    raise Exception(f"Chrome no encontrado en {chrome_path}")
-
+                # Configuración básica de Chrome
                 options = uc.ChromeOptions()
                 options.add_argument('--headless=new')
                 options.add_argument('--no-sandbox')
                 options.add_argument('--disable-dev-shm-usage')
                 options.add_argument('--disable-gpu')
-                options.add_argument('--disable-software-rasterizer')
-                options.add_argument('--disable-extensions')
-                options.add_argument("--disable-application-cache")
-                options.add_argument("--disable-infobars")
-                options.add_argument("--disable-browser-side-navigation")
-                options.add_argument("--ignore-certificate-errors")
-                options.add_argument("--disable-client-side-phishing-detection")
-                options.add_argument('--allow-running-insecure-content')
                 options.add_argument('--window-size=1920,1080')
-                options.add_argument('--start-maximized')
-                options.binary_location = chrome_path
+                
+                # Configuración específica para Koyeb
+                chrome_path = "/app/.apt/opt/google/chrome/google-chrome"
+                if os.path.exists(chrome_path):
+                    options.binary_location = chrome_path
 
-                # Configuraciones adicionales para entorno Koyeb
-                options.add_experimental_option('excludeSwitches', ['enable-automation'])
-                options.add_experimental_option('useAutomationExtension', False)
-
-                # Establecer el directorio de datos del usuario
-                user_data_dir = "/tmp/chrome-data"
-                os.makedirs(user_data_dir, exist_ok=True)
-                options.add_argument(f'--user-data-dir={user_data_dir}')
-
-                # Inicializar el driver con configuración específica
+                # Inicializar el driver con configuración mínima
                 driver = uc.Chrome(
                     options=options,
                     headless=True,
-                    version_main=120,
-                    driver_executable_path=None,
-                    use_subprocess=True
+                    version_main=120
                 )
                 
                 # Configurar timeouts
@@ -258,10 +239,11 @@ class TwitchWatcher:
                 logger.error(f"Error en init_driver: {e}")
                 raise
 
-        # Limpiar cualquier proceso anterior
+        # Limpiar procesos existentes
         try:
-            subprocess.run(['pkill', 'chrome'], stderr=subprocess.DEVNULL)
-            subprocess.run(['pkill', 'chromedriver'], stderr=subprocess.DEVNULL)
+            subprocess.run(['pkill', '-f', 'chrome'], stderr=subprocess.DEVNULL)
+            subprocess.run(['pkill', '-f', 'chromedriver'], stderr=subprocess.DEVNULL)
+            time.sleep(2)  # Esperar a que los procesos se cierren
         except:
             pass
 
@@ -270,7 +252,7 @@ class TwitchWatcher:
             try:
                 with ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(init_driver)
-                    self.driver = future.result(timeout=30)  # Reducir timeout a 30 segundos
+                    self.driver = future.result(timeout=30)
                     logger.info("🚀 Chrome configurado exitosamente")
                     return
             except Exception as e:
@@ -285,11 +267,11 @@ class TwitchWatcher:
                 if attempt < 2:
                     logger.info("Limpiando procesos y reintentando en 5 segundos...")
                     try:
-                        subprocess.run(['pkill', 'chrome'], stderr=subprocess.DEVNULL)
-                        subprocess.run(['pkill', 'chromedriver'], stderr=subprocess.DEVNULL)
+                        subprocess.run(['pkill', '-f', 'chrome'], stderr=subprocess.DEVNULL)
+                        subprocess.run(['pkill', '-f', 'chromedriver'], stderr=subprocess.DEVNULL)
+                        time.sleep(5)
                     except:
                         pass
-                    time.sleep(5)
                 else:
                     raise Exception("No se pudo inicializar Chrome después de 3 intentos")
 
