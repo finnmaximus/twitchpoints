@@ -12,18 +12,16 @@ password = os.getenv('TWITCH_PASSWORD')
 if not username or not password:
     raise ValueError("Las variables de entorno 'TWITCH_USERNAME' y 'TWITCH_PASSWORD' deben estar definidas.")
 
-# Configuración del logger
+# Configuración del logger usando los parámetros correctos según la documentación
 logger_settings = LoggerSettings(
     save=True,
-    console_level="INFO",
-    file_level="DEBUG",
-    emoji=True,
     less=False,
+    console_level=20,  # INFO level
+    file_level=10,     # DEBUG level
+    emoji=True,
     colored=True,
-    path="logs",
-    logger_file="history.log",
-    session_file="session.data",
-    debug_file="debug.log"
+    auto_clear=True,
+    console_username=False
 )
 
 # Configuración del miner
