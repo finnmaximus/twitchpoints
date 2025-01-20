@@ -1,57 +1,59 @@
 import os
+import sys
+from pathlib import Path
+from dotenv import load_dotenv
 from TwitchChannelPointsMiner import TwitchChannelPointsMiner
 from TwitchChannelPointsMiner.classes.Settings import Settings
 from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings
 from TwitchChannelPointsMiner.classes.entities.Streamer import Streamer
 from TwitchChannelPointsMiner.logger import LoggerSettings
 
-# Obtiene las credenciales desde las variables de entorno definidas previamente en el sistema
+# Asegurarse de que el archivo .env se carga desde el directorio del script
+current_dir = Path(__file__).parent.absolute()
+env_path = current_dir / '.env'
+load_dotenv(env_path)
+
+# Obtiene las credenciales desde las variables de entorno
 username = os.getenv('TWITCH_USERNAME')
 password = os.getenv('TWITCH_PASSWORD')
 
 if not username or not password:
-    raise ValueError("Las variables de entorno 'TWITCH_USERNAME' y 'TWITCH_PASSWORD' deben estar definidas.")
+    print("Error: No se encontraron las credenciales en el archivo .env")
+    print(f"Buscando archivo en: {env_path}")
+    print("Asegúrate de que el archivo .env existe y contiene TWITCH_USERNAME y TWITCH_PASSWORD")
+    sys.exit(1)
 
-# Configuración del logger usando los parámetros correctos según la documentación
+# Configuración del logger con más información visible
 logger_settings = LoggerSettings(
     save=True,
     less=False,
-    console_level=20,  # INFO level
+    console_level=10,  # Cambiado a DEBUG level para ver más información
     file_level=10,     # DEBUG level
     emoji=True,
     colored=True,
-    auto_clear=True,
-    console_username=False
+    auto_clear=False,  # Cambiado a False para mantener todos los logs
+    console_username=True  # Cambiado a True para ver el username en los logs
 )
 
-# Configuración del miner
-settings = Settings(
-    check_interval=60,
-    make_predictions=False,
-    follow_raid=True,
-    claim_drops=True,
-    watch_streak=True,
-    auto_claim_bonuses=True,
-    bet=BetSettings(
-        enabled=False,
-        percentage_gap=20,
-        max_points=50000,
-        strategy=Strategy.SMART
-    ),
-    disable_ssl_cert_verification=True,
-    enable_analytics=True,
-    chat_online=False
-)
-
-# Inicialización y ejecución del miner
+# Inicialización del minero sin configuración previa
 twitch_miner = TwitchChannelPointsMiner(
     username=username,
     password=password,
-    logger_settings=logger_settings,
-    settings=settings
+    logger_settings=logger_settings
 )
+
+# Configurar los ajustes después de la inicialización
+Settings.check_interval = 60
+Settings.make_predictions = False
+Settings.follow_raid = True
+Settings.claim_drops = True
+Settings.watch_streak = True
+Settings.auto_claim_bonuses = True
+Settings.disable_ssl_cert_verification = True
+Settings.enable_analytics = True
+Settings.chat_online = False
 
 # Ejecuta el miner con la configuración para el streamer Mixwell
 twitch_miner.run([
-    Streamer("mixwell", settings=settings)
+    Streamer("mixwell")
 ])
