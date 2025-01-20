@@ -1,19 +1,18 @@
 import os
-from dotenv import load_dotenv
-from TwitchChannelPointsMiner import TwitchChannelPointsMiner
-from TwitchChannelPointsMiner.classes.Settings import Settings
-from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings
-from TwitchChannelPointsMiner.classes.entities.Streamer import Streamer
-from TwitchChannelPointsMiner.logger import LoggerSettings
+from twitch_channel_points_miner import TwitchChannelPointsMiner
+from twitch_channel_points_miner.classes.settings import Settings
+from twitch_channel_points_miner.classes.entities.bet import Strategy, BetSettings
+from twitch_channel_points_miner.classes.entities.streamer import Streamer
+from twitch_channel_points_miner.logger import LoggerSettings
 
-# Cargar variables de entorno
-load_dotenv()
+# Obtener credenciales desde las variables de entorno del sistema
+username = os.getenv('TWITCH_USERNAME')  # Debe estar definido en el sistema
+password = os.getenv('TWITCH_PASSWORD')  # Debe estar definido en el sistema
 
-# Get credentials from environment variables
-username = os.getenv('TWITCH_USERNAME')
-password = os.getenv('TWITCH_PASSWORD')
+if not username or not password:
+    raise ValueError("Las variables de entorno 'TWITCH_USERNAME' y 'TWITCH_PASSWORD' deben estar definidas.")
 
-# Configure logger settings for better tracking
+# Configuración del logger
 logger_settings = LoggerSettings(
     save=True,
     console_level="INFO",
@@ -27,7 +26,7 @@ logger_settings = LoggerSettings(
     debug_file="debug.log"
 )
 
-# Main settings with optimized configuration
+# Configuración general del miner
 settings = Settings(
     check_interval=60,
     make_predictions=False,
@@ -46,7 +45,7 @@ settings = Settings(
     chat_online=False
 )
 
-# Initialize the miner with updated settings
+# Inicialización y ejecución del miner
 twitch_miner = TwitchChannelPointsMiner(
     username=username,
     password=password,
@@ -54,7 +53,6 @@ twitch_miner = TwitchChannelPointsMiner(
     settings=settings
 )
 
-# Run the miner with Mixwell's channel
 twitch_miner.run([
     Streamer("mixwell", settings=settings)
 ])
