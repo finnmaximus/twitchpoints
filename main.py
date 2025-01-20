@@ -4,7 +4,7 @@ from TwitchChannelPointsMiner import TwitchChannelPointsMiner
 from TwitchChannelPointsMiner.classes.Settings import Settings
 from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings
 from TwitchChannelPointsMiner.classes.entities.Streamer import Streamer
-from TwitchChannelPointsMiner.logger import LoggerSettings, ColorPalette
+from TwitchChannelPointsMiner.logger import LoggerSettings
 
 # Cargar variables de entorno
 load_dotenv()
@@ -21,8 +21,6 @@ logger_settings = LoggerSettings(
     emoji=True,
     less=False,
     colored=True,
-    color_palette=None,  # Removemos la opción de color_palette ya que está causando problemas
-    live=True,
     path="logs",
     logger_file="history.log",
     session_file="session.data",
@@ -38,14 +36,14 @@ settings = Settings(
     watch_streak=True,
     auto_claim_bonuses=True,
     bet=BetSettings(
-        enabled=False,  # Explicitly disable betting
+        enabled=False,
         percentage_gap=20,
         max_points=50000,
         strategy=Strategy.SMART
     ),
-    disable_ssl_cert_verification=True,  # Help prevent connection issues
+    disable_ssl_cert_verification=True,
     enable_analytics=True,
-    chat_online=False  # Don't join chat to avoid detection
+    chat_online=False
 )
 
 # Initialize the miner with updated settings
