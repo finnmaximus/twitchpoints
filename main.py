@@ -1,13 +1,13 @@
 import os
-from twitch_channel_points_miner import TwitchChannelPointsMiner
-from twitch_channel_points_miner.classes.settings import Settings
-from twitch_channel_points_miner.classes.entities.bet import Strategy, BetSettings
-from twitch_channel_points_miner.classes.entities.streamer import Streamer
-from twitch_channel_points_miner.logger import LoggerSettings
+from TwitchChannelPointsMiner import TwitchChannelPointsMiner
+from TwitchChannelPointsMiner.classes.Settings import Settings
+from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings
+from TwitchChannelPointsMiner.classes.entities.Streamer import Streamer
+from TwitchChannelPointsMiner.logger import LoggerSettings
 
-# Obtener credenciales desde las variables de entorno del sistema
-username = os.getenv('TWITCH_USERNAME')  # Debe estar definido en el sistema
-password = os.getenv('TWITCH_PASSWORD')  # Debe estar definido en el sistema
+# Obtiene las credenciales desde las variables de entorno definidas previamente en el sistema
+username = os.getenv('TWITCH_USERNAME')
+password = os.getenv('TWITCH_PASSWORD')
 
 if not username or not password:
     raise ValueError("Las variables de entorno 'TWITCH_USERNAME' y 'TWITCH_PASSWORD' deben estar definidas.")
@@ -26,7 +26,7 @@ logger_settings = LoggerSettings(
     debug_file="debug.log"
 )
 
-# Configuración general del miner
+# Configuración del miner
 settings = Settings(
     check_interval=60,
     make_predictions=False,
@@ -53,6 +53,7 @@ twitch_miner = TwitchChannelPointsMiner(
     settings=settings
 )
 
+# Ejecuta el miner con la configuración para el streamer Mixwell
 twitch_miner.run([
     Streamer("mixwell", settings=settings)
 ])
