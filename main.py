@@ -24,7 +24,8 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         return
 
 def run_health_server():
-    server = HTTPServer(('0.0.0.0', int(os.getenv('PORT', 8080))), HealthCheckHandler)
+    port = int(os.getenv('PORT', 8080))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
     server.serve_forever()
 
 # Asegurarse de que el archivo .env se carga desde el directorio del script
