@@ -5,4 +5,5 @@ browser-cookie3
 pandas
 validators
 colorama
+emoji
 git+https://github.com/rdavydov/Twitch-Channel-Points-Miner-v2.git
