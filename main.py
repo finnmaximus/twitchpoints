@@ -1,12 +1,31 @@
 import os
 import sys
+import threading
 from pathlib import Path
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
 from TwitchChannelPointsMiner import TwitchChannelPointsMiner
 from TwitchChannelPointsMiner.classes.Settings import Settings
 from TwitchChannelPointsMiner.classes.entities.Bet import Strategy, BetSettings
 from TwitchChannelPointsMiner.classes.entities.Streamer import Streamer
 from TwitchChannelPointsMiner.logger import LoggerSettings
+
+# Servidor HTTP simple para health checks
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b'OK')
+        
+    def log_message(self, format, *args):
+        # Evitar logging de requests HTTP
+        return
+
+def run_health_server():
+    server = HTTPServer(('0.0.0.0', int(os.getenv('PORT', 8080))), HealthCheckHandler)
+    server.serve_forever()
 
 # Asegurarse de que el archivo .env se carga desde el directorio del script
 current_dir = Path(__file__).parent.absolute()
@@ -41,6 +60,10 @@ twitch_miner = TwitchChannelPointsMiner(
     password=password,
     logger_settings=logger_settings
 )
+
+# Iniciar servidor de health check en un thread separado
+health_thread = threading.Thread(target=run_health_server, daemon=True)
+health_thread.start()
 
 # Configurar los ajustes después de la inicialización
 Settings.check_interval = 60
